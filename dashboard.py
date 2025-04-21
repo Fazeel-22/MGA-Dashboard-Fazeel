@@ -42,13 +42,8 @@ with left_col:
 
         # --- RESET BUTTON ---
         if st.button("🔄 Reset to Initial"):
-            st.session_state.priority_order = list(initial_energy_sources.keys())
-            st.session_state.energy_sources = {
-                k: v.copy() for k, v in initial_energy_sources.items()
-            }
-            st.session_state.slider_constraints = {}
-            st.session_state.limiters_initialized = False
-            st.experimental_rerun()
+            st.session_state.clear()
+            st.rerun()  # 🔧 Fixed here!
 
         for i, source in enumerate(st.session_state.priority_order):
             energy_data = st.session_state.energy_sources[source]
@@ -175,7 +170,6 @@ with right_col:
         current_val = top_data["value"]
         disabled = (top_action == "⏸️")
 
-        # No limiters on first interaction
         limiters = {}
 
         # If interaction has occurred before, apply constraints
