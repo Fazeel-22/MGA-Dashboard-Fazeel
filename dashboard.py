@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import uuid
-import json, ast
+import json, ast, os, requests
 import base64
 from pathlib import Path
 from gurobipy import Model, GRB, quicksum
@@ -62,14 +62,21 @@ def load_feasible_region():
 
 @st.cache_data
 def load_precomputed_mga_paths():
-    raw = json.load(open("precomputed_mga_nested.json"))
+    path = "precomputed_mga_nested.json"
+    if not os.path.exists(path):
+        url = st.secrets["MGA_JSON_URL"]
+        r = requests.get(url)
+        r.raise_for_status()
+        with open(path, "wb") as f:
+            f.write(r.content)
+    raw = json.load(open(path))
     return {ast.literal_eval(k): v for k, v in raw.items()}
 
 A = load_feasible_region()
-_ = load_precomputed_mga_paths()
+precomputed_paths = load_precomputed_mga_paths()
 A_np = np.array([A[s] for s in default_sources])
-UB   = {s: A_np[i].max() for i,s in enumerate(default_sources)}
-LB   = {s: A_np[i].min() for i,s in enumerate(default_sources)}
+UB   = {s: A_np[i].max() for i, s in enumerate(default_sources)}
+LB   = {s: A_np[i].min() for i, s in enumerate(default_sources)}
 R    = {s: UB[s] - LB[s] for s in default_sources}
 
 @st.cache_data
@@ -98,7 +105,7 @@ def solve_lp(constraints, obj_source, maximize=False):
     m.addConstr(quicksum(λ[j] for j in range(n)) == 1)
     m.setObjective(quicksum(A[obj_source][j]*λ[j] for j in range(n)),
                    GRB.MAXIMIZE if maximize else GRB.MINIMIZE)
-    for src,(lb,ub) in constraints.items():
+    for src, (lb, ub) in constraints.items():
         expr = quicksum(A[src][j]*λ[j] for j in range(n))
         if lb is not None: m.addConstr(expr >= lb)
         if ub is not None: m.addConstr(expr <= ub)
@@ -110,11 +117,11 @@ def solve_lp(constraints, obj_source, maximize=False):
 
 def gen_step_constraint(prev_pt, src, direction, use_slider_val=None):
     if use_slider_val is not None:
-        if direction=="↑": return (min(use_slider_val+ϵ*R[src],UB[src]), None)
-        if direction=="↓": return (None, max(use_slider_val-ϵ*R[src],LB[src]))
+        if direction == "↑": return (min(use_slider_val+ϵ*R[src],UB[src]), None)
+        if direction == "↓": return (None, max(use_slider_val-ϵ*R[src],LB[src]))
         return (max(use_slider_val-ϵ*R[src],LB[src]), min(use_slider_val+ϵ*R[src],UB[src]))
-    if direction=="↑": return (min(prev_pt[src]+ϵ*R[src],UB[src]), None)
-    if direction=="↓": return (None, max(prev_pt[src]-ϵ*R[src],LB[src]))
+    if direction == "↑": return (min(prev_pt[src]+ϵ*R[src],UB[src]), None)
+    if direction == "↓": return (None, max(prev_pt[src]-ϵ*R[src],LB[src]))
     return (max(prev_pt[src]-ϵ*R[src],LB[src]), min(prev_pt[src]+ϵ*R[src],UB[src]))
 
 # --- Callbacks ---
@@ -281,7 +288,7 @@ with right:
 
     # 4) Credits
     st.markdown(
-        "<div style='text-align:right; font-size:1.2em; color:gray; margin-top:1rem;'>"
+        "<div style='text-align:right; font-size:0.8em; color:gray; margin-top:1rem;'>"
         "Created by: Muhammad Fazeel<br>"
         "Supervisors: Prof. Dr. Florian Steinke, Sina Hajikazemi"
         "</div>",
