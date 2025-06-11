@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import uuid
+import gzip
 import json, ast, os, requests
 import base64
 from pathlib import Path
@@ -62,14 +63,27 @@ def load_feasible_region():
 
 @st.cache_data
 def load_precomputed_mga_paths():
-    path = "precomputed_mga_nested.json"
-    if not os.path.exists(path):
+    gz_path   = "precomputed_mga_nested.json.gz"
+    json_path = "precomputed_mga_nested.json"
+
+    # 1) If uncompressed JSON exists, load it
+    if os.path.exists(json_path):
+        raw = json.load(open(json_path))
+    # 2) Else if compressed exists, decompress and load
+    elif os.path.exists(gz_path):
+        with gzip.open(gz_path, "rt") as f:
+            raw = json.load(f)
+    # 3) Otherwise download, save both .gz and .json, then load
+    else:
         url = st.secrets["MGA_JSON_URL"]
         r = requests.get(url)
         r.raise_for_status()
-        with open(path, "wb") as f:
+        with open(gz_path, "wb") as f:
             f.write(r.content)
-    raw = json.load(open(path))
+        with gzip.open(gz_path, "rb") as f_in, open(json_path, "wb") as f_out:
+            f_out.write(f_in.read())
+        raw = json.load(open(json_path))
+
     return {ast.literal_eval(k): v for k, v in raw.items()}
 
 A = load_feasible_region()
@@ -126,7 +140,7 @@ def gen_step_constraint(prev_pt, src, direction, use_slider_val=None):
 
 # --- Callbacks ---
 def on_dir_change(src):
-    k = st.session_state.current_step
+    k    = st.session_state.current_step
     dirc = st.session_state[f"dir_{k}"]
     st.session_state.user_directions[src] = dirc
     base = dict(st.session_state.constraints)
@@ -142,10 +156,10 @@ def on_dir_change(src):
     st.session_state.message    = "🟢 Drag slider then ▶" if sol else "⚠️ No feasible point."
 
 def on_proceed():
-    k   = st.session_state.current_step
-    src = st.session_state.priority_order[k]
+    k    = st.session_state.current_step
+    src  = st.session_state.priority_order[k]
     dirc = st.session_state[f"dir_{k}"]
-    val = st.session_state[f"slide_{k}"]
+    val  = st.session_state[f"slide_{k}"]
     lb, ub = gen_step_constraint(st.session_state.current_point, src, dirc, use_slider_val=val)
     st.session_state.constraints[src] = (lb, ub)
     sol = solve_lp(st.session_state.constraints, obj_source=src)
@@ -158,41 +172,43 @@ def on_proceed():
     return False
 
 # --- Session initialization ---
-if "priority_order"  not in st.session_state: st.session_state.priority_order  = default_sources.copy()
-if "current_point"   not in st.session_state:
+if "priority_order"    not in st.session_state: st.session_state.priority_order    = default_sources.copy()
+if "current_point"     not in st.session_state:
     init = np.full(len(A[default_sources[0]]),1/len(A[default_sources[0]]))
-    st.session_state.current_point = {s:float(init.dot(A[s])) for s in default_sources}
-if "constraints"     not in st.session_state: st.session_state.constraints     = {}
-if "current_step"    not in st.session_state: st.session_state.current_step    = 0
-if "user_directions" not in st.session_state: st.session_state.user_directions = {}
-if "next_point"      not in st.session_state: st.session_state.next_point      = dict(st.session_state.current_point)
-if "message"         not in st.session_state: st.session_state.message         = "Pick a direction to see the new extreme."
-if "slider_values"   not in st.session_state: st.session_state.slider_values   = {}
+    st.session_state.current_point = {s: float(init.dot(A[s])) for s in default_sources}
+if "constraints"       not in st.session_state: st.session_state.constraints       = {}
+if "current_step"      not in st.session_state: st.session_state.current_step      = 0
+if "user_directions"   not in st.session_state: st.session_state.user_directions   = {}
+if "next_point"        not in st.session_state: st.session_state.next_point        = dict(st.session_state.current_point)
+if "message"           not in st.session_state: st.session_state.message           = "Pick a direction to see the new extreme."
+if "slider_values"     not in st.session_state: st.session_state.slider_values     = {}
 
 # --- Main Layout ---
-left, right = st.columns([1,2], gap="large")
+left, right = st.columns([1, 2], gap="large")
 
 with left:
     st.subheader("🔋 Energy Controls & Priority")
     if st.button("🔄 Reset"):
-        for k in ["priority_order","current_point","constraints",
-                  "current_step","user_directions","next_point",
-                  "message","slider_values"]:
-            st.session_state.pop(k, None)
+        for key in ["priority_order","current_point","constraints",
+                    "current_step","user_directions","next_point",
+                    "message","slider_values"]:
+            st.session_state.pop(key, None)
         st.rerun()
 
     for i, src in enumerate(st.session_state.priority_order, start=1):
         po = st.session_state.priority_order
-        c1, c2, c3 = st.columns([0.15,0.3,0.55])
+        c1, c2, c3 = st.columns([0.15, 0.3, 0.55])
         cur = st.session_state.current_point[src]
         lo, hi = LB[src], UB[src]
-        pct = int((cur - lo)/(hi - lo)*100)
+        pct = int((cur - lo) / (hi - lo) * 100)
 
         with c1:
-            if st.button("⬆️", key=f"up_{src}") and i>1:
-                po[i-1], po[i-2] = po[i-2], po[i-1]; st.rerun()
-            if st.button("⬇️", key=f"down_{src}") and i<len(po):
-                po[i-1], po[i]   = po[i], po[i-1]; st.rerun()
+            if st.button("⬆️", key=f"up_{src}") and i > 1:
+                po[i-1], po[i-2] = po[i-2], po[i-1]
+                st.rerun()
+            if st.button("⬇️", key=f"down_{src}") and i < len(po):
+                po[i-1], po[i] = po[i], po[i-1]
+                st.rerun()
 
         with c2:
             st.markdown(f"**{i}. {src}** – {cur:.1f} GW")
