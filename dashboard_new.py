@@ -71,11 +71,9 @@ A = load_feasible_region()
 _ = load_precomputed_mga_paths()
 
 A_np = np.array([A[s] for s in default_sources])
-UB, LB = (
-    {s: A_np[i].max() for i, s in enumerate(default_sources)},
-    {s: A_np[i].min() for i, s in enumerate(default_sources)}
-)
-R = {s: UB[s] - LB[s] for s in default_sources}
+UB = {s: A_np[i].max() for i, s in enumerate(default_sources)}
+LB = {s: A_np[i].min() for i, s in enumerate(default_sources)}
+R  = {s: UB[s] - LB[s] for s in default_sources}
 
 @st.cache_data
 def generate_ts_data():
@@ -137,20 +135,25 @@ def on_dir_change(src):
     dirc = st.session_state[f"dir_{k}"]
     st.session_state.user_directions[src] = dirc
     if dirc in ("↑","↓"):
-        sol = solve_lp(dict(st.session_state.constraints), obj_source=src, maximize=(dirc=="↑"))
+        sol = solve_lp(
+            dict(st.session_state.constraints),
+            obj_source=src,
+            maximize=(dirc=="↑")
+        )
         st.session_state.next_point = sol or {}
         st.session_state.message = (
-            "🟢 Extreme found. Slide to explore!" if sol
-            else "❌ No feasible extreme. Choose another direction."
+            "🟢 Extreme found. Slide to explore!"
+            if sol else
+            "❌ No feasible extreme. Choose another direction."
         )
     else:
         st.session_state.next_point[src] = st.session_state.current_point[src]
         st.session_state.message = "⏸️ Paused—click ▶ to lock current value"
 
 def on_proceed():
-    k = st.session_state.current_step
+    k   = st.session_state.current_step
     src = st.session_state.priority_order[k]
-    dirc = st.session_state.user_directions.get(src, "⏸️")
+    dirc= st.session_state.user_directions.get(src, "⏸️")
     st.session_state.user_directions[src] = dirc
 
     if k == 0:
@@ -158,18 +161,20 @@ def on_proceed():
 
     val = (
         st.session_state.current_point[src]
-        if dirc == "⏸️"
+        if dirc=="⏸️"
         else st.session_state.get(f"slide_{k}", st.session_state.current_point[src])
     )
     st.session_state.slider_values[f"slide_{k}"] = val
 
-    if dirc == "⏸️":
+    if dirc=="⏸️":
         st.session_state.constraints[src] = (val, val)
         st.session_state.message = f"🔒 Paused {src} at {val:.1f} GW"
         st.session_state.current_step += 1
         return True
 
-    lb, ub = gen_step_constraint(st.session_state.current_point, src, dirc, use_slider_val=val)
+    lb, ub = gen_step_constraint(
+        st.session_state.current_point, src, dirc, use_slider_val=val
+    )
     st.session_state.constraints[src] = (lb, ub)
     sol = solve_lp(st.session_state.constraints, obj_source=src)
     if sol:
@@ -182,17 +187,17 @@ def on_proceed():
     return False
 
 # --- Session init ---
-if "priority_order"  not in st.session_state: st.session_state.priority_order = default_sources.copy()
+if "priority_order"  not in st.session_state: st.session_state.priority_order    = default_sources.copy()
 if "current_point"   not in st.session_state:
     init = np.full(len(A[default_sources[0]]), 1/len(A[default_sources[0]]))
     st.session_state.current_point = {s: float(init.dot(A[s])) for s in default_sources}
-if "constraints"     not in st.session_state: st.session_state.constraints = {}
-if "current_step"    not in st.session_state: st.session_state.current_step = 0
-if "user_directions" not in st.session_state: st.session_state.user_directions = {}
-if "next_point"      not in st.session_state: st.session_state.next_point = dict(st.session_state.current_point)
-if "message"         not in st.session_state: st.session_state.message = "Pick a direction to see the new extreme."
-if "slider_values"   not in st.session_state: st.session_state.slider_values = {}
-if "priority_locked" not in st.session_state: st.session_state.priority_locked = False
+if "constraints"     not in st.session_state: st.session_state.constraints       = {}
+if "current_step"    not in st.session_state: st.session_state.current_step      = 0
+if "user_directions" not in st.session_state: st.session_state.user_directions   = {}
+if "next_point"      not in st.session_state: st.session_state.next_point        = dict(st.session_state.current_point)
+if "message"         not in st.session_state: st.session_state.message           = "Pick a direction to see the new extreme."
+if "slider_values"   not in st.session_state: st.session_state.slider_values     = {}
+if "priority_locked" not in st.session_state: st.session_state.priority_locked  = False
 
 # --- Layout ---
 left, right = st.columns([1,2], gap="large")
@@ -219,10 +224,10 @@ with left:
                 if st.button("🔺", key=f"lock_up_{src}") or st.button("🔻", key=f"lock_down_{src}"):
                     st.session_state.message = "🔴 Priority locked. Press Reset to change."
             else:
-                if st.button("⬆️", key=f"up_{src}") and i>1:
+                if st.button("⬆️", key=f"up_{src}")   and i>1:
                     po[i-1], po[i-2] = po[i-2], po[i-1]; st.rerun()
                 if st.button("⬇️", key=f"down_{src}") and i<len(po):
-                    po[i-1], po[i] = po[i], po[i-1]; st.rerun()
+                    po[i-1], po[i]   = po[i], po[i-1]; st.rerun()
 
         with c2:
             st.markdown(f"**{i}. {src}** – {cur:.1f} GW")
@@ -250,8 +255,9 @@ with left:
         dirc = st.session_state.user_directions.get(src)
         if dirc in ("↑","↓") and src in st.session_state.next_point:
             lo, hi = st.session_state.current_point[src], st.session_state.next_point[src]
-            if hi < lo: lo,hi = hi,lo
-            if lo == hi:
+            if hi<lo: lo,hi = hi,lo
+
+            if lo==hi:
                 st.write(f"**{src}** is already locked at {hi:.1f} GW")
             else:
                 val = st.slider(
@@ -270,8 +276,9 @@ with left:
             if on_proceed():
                 st.rerun()
 
+        # give it a non‐empty, but hidden, label
         st.text_area(
-            label="",
+            label="Status",
             value=st.session_state.message,
             height=100,
             label_visibility="hidden"
@@ -295,7 +302,7 @@ with right:
     st.subheader("📈 Interpolated Energy Values")
     k = st.session_state.current_step
     if k < len(po) and f"slide_{k}" in st.session_state:
-        src = po[k]
+        src=po[k]
         lo, hi = st.session_state.current_point[src], st.session_state.next_point.get(src, lo)
         α = 0 if hi==lo else (st.session_state[f"slide_{k}"]-lo)/(hi-lo)
         interp = {
