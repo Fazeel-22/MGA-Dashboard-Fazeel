@@ -2,8 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import uuid
-import json, ast
-import gzip
+import json, ast, os, gzip
 import base64
 from pathlib import Path
 from gurobipy import Model, GRB, quicksum
@@ -62,13 +61,20 @@ def load_feasible_region():
 
 @st.cache_data
 def load_precomputed_mga_paths():
-    gz_path = "precomputed_mga_nested.json.gz"
-    with gzip.open(gz_path, "rt") as f:
-        raw = json.load(f)
+    gz_path  = "precomputed_mga_nested.json.gz"
+    json_path = "precomputed_mga_nested.json"
+    if os.path.exists(gz_path):
+        with gzip.open(gz_path, "rt") as f:
+            raw = json.load(f)
+    elif os.path.exists(json_path):
+        raw = json.load(open(json_path, "r"))
+    else:
+        st.error("Could not find precomputed_mga_nested.json.gz or .json in the app directory.")
+        return {}
     return {ast.literal_eval(k): v for k, v in raw.items()}
 
 A = load_feasible_region()
-_ = load_precomputed_mga_paths()
+_ = load_precomputed_mga_paths()  # now safe
 
 A_np = np.array([A[s] for s in default_sources])
 UB = {s: A_np[i].max() for i, s in enumerate(default_sources)}
@@ -131,7 +137,7 @@ def gen_step_constraint(prev_pt, src, direction, use_slider_val=None):
 
 # --- Callbacks ---
 def on_dir_change(src):
-    k = st.session_state.current_step
+    k    = st.session_state.current_step
     dirc = st.session_state[f"dir_{k}"]
     st.session_state.user_directions[src] = dirc
     if dirc in ("↑","↓"):
@@ -142,18 +148,17 @@ def on_dir_change(src):
         )
         st.session_state.next_point = sol or {}
         st.session_state.message = (
-            "🟢 Extreme found. Slide to explore!"
-            if sol else
-            "❌ No feasible extreme. Choose another direction."
+            "🟢 Extreme found. Slide to explore!" if sol
+            else "❌ No feasible extreme. Choose another direction."
         )
     else:
         st.session_state.next_point[src] = st.session_state.current_point[src]
         st.session_state.message = "⏸️ Paused—click ▶ to lock current value"
 
 def on_proceed():
-    k   = st.session_state.current_step
-    src = st.session_state.priority_order[k]
-    dirc= st.session_state.user_directions.get(src, "⏸️")
+    k    = st.session_state.current_step
+    src  = st.session_state.priority_order[k]
+    dirc = st.session_state.user_directions.get(src, "⏸️")
     st.session_state.user_directions[src] = dirc
 
     if k == 0:
@@ -161,12 +166,12 @@ def on_proceed():
 
     val = (
         st.session_state.current_point[src]
-        if dirc=="⏸️"
+        if dirc == "⏸️"
         else st.session_state.get(f"slide_{k}", st.session_state.current_point[src])
     )
     st.session_state.slider_values[f"slide_{k}"] = val
 
-    if dirc=="⏸️":
+    if dirc == "⏸️":
         st.session_state.constraints[src] = (val, val)
         st.session_state.message = f"🔒 Paused {src} at {val:.1f} GW"
         st.session_state.current_step += 1
@@ -256,7 +261,6 @@ with left:
         if dirc in ("↑","↓") and src in st.session_state.next_point:
             lo, hi = st.session_state.current_point[src], st.session_state.next_point[src]
             if hi<lo: lo,hi = hi,lo
-
             if lo==hi:
                 st.write(f"**{src}** is already locked at {hi:.1f} GW")
             else:
@@ -276,7 +280,7 @@ with left:
             if on_proceed():
                 st.rerun()
 
-        # give it a non‐empty, but hidden, label
+        # real but hidden label to fix the warning
         st.text_area(
             label="Status",
             value=st.session_state.message,
@@ -287,7 +291,6 @@ with left:
         st.success("✅ All priorities done!")
 
 with right:
-    # 1) Capacity Projections
     st.subheader("📆 Capacity Projections (2030–2060)")
     cp     = st.session_state.current_point
     ratios = {s: cp[s]/ts_means[s] for s in default_sources}
@@ -298,7 +301,6 @@ with right:
     fig_ts.update_layout(xaxis_title="Year", yaxis_title="Capacity (GW)", height=300)
     st.plotly_chart(fig_ts, use_container_width=True)
 
-    # 2) Interpolated Energy Values
     st.subheader("📈 Interpolated Energy Values")
     k = st.session_state.current_step
     if k < len(po) and f"slide_{k}" in st.session_state:
@@ -320,7 +322,6 @@ with right:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 3) Your Selections
     st.subheader("📝 Your Selections")
     records = [{
         "Source": src,
@@ -329,7 +330,6 @@ with right:
     } for i, src in enumerate(po)]
     st.dataframe(pd.DataFrame(records), use_container_width=True)
 
-    # 4) Credits
     st.markdown(
       "<div style='text-align:right; font-size:1.2em; color:gray; margin-top:1rem;'>"
       "Created by: Muhammad Fazeel<br>"
