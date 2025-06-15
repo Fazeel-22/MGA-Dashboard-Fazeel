@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import uuid
-import json, ast, os, gzip
+import json, ast
 import base64
 from pathlib import Path
 from gurobipy import Model, GRB, quicksum
@@ -59,22 +59,7 @@ def load_feasible_region():
     df = pd.read_excel("A_matrix_feasible_region.xlsx")
     return {col: df[col].values for col in df.columns}
 
-@st.cache_data
-def load_precomputed_mga_paths():
-    gz_path  = "precomputed_mga_nested.json.gz"
-    json_path = "precomputed_mga_nested.json"
-    if os.path.exists(gz_path):
-        with gzip.open(gz_path, "rt") as f:
-            raw = json.load(f)
-    elif os.path.exists(json_path):
-        raw = json.load(open(json_path, "r"))
-    else:
-        st.error("Could not find precomputed_mga_nested.json.gz or .json in the app directory.")
-        return {}
-    return {ast.literal_eval(k): v for k, v in raw.items()}
-
 A = load_feasible_region()
-_ = load_precomputed_mga_paths()  # now safe
 
 A_np = np.array([A[s] for s in default_sources])
 UB = {s: A_np[i].max() for i, s in enumerate(default_sources)}
@@ -141,11 +126,7 @@ def on_dir_change(src):
     dirc = st.session_state[f"dir_{k}"]
     st.session_state.user_directions[src] = dirc
     if dirc in ("↑","↓"):
-        sol = solve_lp(
-            dict(st.session_state.constraints),
-            obj_source=src,
-            maximize=(dirc=="↑")
-        )
+        sol = solve_lp(dict(st.session_state.constraints), obj_source=src, maximize=(dirc=="↑"))
         st.session_state.next_point = sol or {}
         st.session_state.message = (
             "🟢 Extreme found. Slide to explore!" if sol
@@ -166,20 +147,18 @@ def on_proceed():
 
     val = (
         st.session_state.current_point[src]
-        if dirc == "⏸️"
+        if dirc=="⏸️"
         else st.session_state.get(f"slide_{k}", st.session_state.current_point[src])
     )
     st.session_state.slider_values[f"slide_{k}"] = val
 
-    if dirc == "⏸️":
+    if dirc=="⏸️":
         st.session_state.constraints[src] = (val, val)
         st.session_state.message = f"🔒 Paused {src} at {val:.1f} GW"
         st.session_state.current_step += 1
         return True
 
-    lb, ub = gen_step_constraint(
-        st.session_state.current_point, src, dirc, use_slider_val=val
-    )
+    lb, ub = gen_step_constraint(st.session_state.current_point, src, dirc, use_slider_val=val)
     st.session_state.constraints[src] = (lb, ub)
     sol = solve_lp(st.session_state.constraints, obj_source=src)
     if sol:
@@ -280,7 +259,6 @@ with left:
             if on_proceed():
                 st.rerun()
 
-        # real but hidden label to fix the warning
         st.text_area(
             label="Status",
             value=st.session_state.message,
