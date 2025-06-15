@@ -71,23 +71,26 @@ A = load_feasible_region()
 _ = load_precomputed_mga_paths()
 
 A_np = np.array([A[s] for s in default_sources])
-UB, LB = {s: A_np[i].max() for i, s in enumerate(default_sources)}, {s: A_np[i].min() for i, s in enumerate(default_sources)}
-R    = {s: UB[s] - LB[s] for s in default_sources}
+UB, LB = (
+    {s: A_np[i].max() for i, s in enumerate(default_sources)},
+    {s: A_np[i].min() for i, s in enumerate(default_sources)}
+)
+R = {s: UB[s] - LB[s] for s in default_sources}
 
 @st.cache_data
 def generate_ts_data():
-    years = np.arange(2030,2061)
+    years = np.arange(2030, 2061)
     n = len(years)
-    pv   = np.linspace(50,200,n)+np.random.normal(0,5,n)
-    wind = np.linspace(75,200,n)+np.random.normal(0,5,n)
-    coal = np.clip(np.linspace(100,0,n)+np.random.normal(0,3,n),0,None)
+    pv   = np.linspace(50,200,n) + np.random.normal(0,5,n)
+    wind = np.linspace(75,200,n) + np.random.normal(0,5,n)
+    coal = np.clip(np.linspace(100,0,n) + np.random.normal(0,3,n), 0, None)
     nuclear = np.zeros(n)
     nuclear[:6] = np.linspace(20,0,6)
-    nuclear = np.clip(nuclear + np.random.normal(0,1,n),0,None)
-    gas  = np.clip(np.linspace(30,60,n)+np.random.normal(0,2,n),0,None)
+    nuclear = np.clip(nuclear + np.random.normal(0,1,n), 0, None)
+    gas  = np.clip(np.linspace(30,60,n) + np.random.normal(0,2,n), 0, None)
     return pd.DataFrame({
-        "PV":pv, "Wind":wind, "Coal":coal,
-        "Nuclear":nuclear, "Gas CHP":gas
+        "PV": pv, "Wind": wind, "Coal": coal,
+        "Nuclear": nuclear, "Gas CHP": gas
     }, index=years)
 
 ts_data  = generate_ts_data()
@@ -95,16 +98,16 @@ ts_means = ts_data.mean()
 
 # --- LP solver ---
 def solve_lp(constraints, obj_source, maximize=False):
-    m = Model(); m.setParam("OutputFlag",0)
+    m = Model(); m.setParam("OutputFlag", 0)
     n = len(A[default_sources[0]])
     λ = m.addVars(n, lb=0, ub=1)
     m.addConstr(quicksum(λ[j] for j in range(n)) == 1)
     m.setObjective(
-        quicksum(A[obj_source][j]*λ[j] for j in range(n)),
+        quicksum(A[obj_source][j] * λ[j] for j in range(n)),
         GRB.MAXIMIZE if maximize else GRB.MINIMIZE
     )
-    for src,(lb,ub) in constraints.items():
-        expr = quicksum(A[src][j]*λ[j] for j in range(n))
+    for src, (lb, ub) in constraints.items():
+        expr = quicksum(A[src][j] * λ[j] for j in range(n))
         if lb is not None: m.addConstr(expr >= lb)
         if ub is not None: m.addConstr(expr <= ub)
     m.optimize()
@@ -155,12 +158,12 @@ def on_proceed():
 
     val = (
         st.session_state.current_point[src]
-        if dirc=="⏸️"
+        if dirc == "⏸️"
         else st.session_state.get(f"slide_{k}", st.session_state.current_point[src])
     )
     st.session_state.slider_values[f"slide_{k}"] = val
 
-    if dirc=="⏸️":
+    if dirc == "⏸️":
         st.session_state.constraints[src] = (val, val)
         st.session_state.message = f"🔒 Paused {src} at {val:.1f} GW"
         st.session_state.current_step += 1
@@ -191,14 +194,16 @@ if "message"         not in st.session_state: st.session_state.message = "Pick a
 if "slider_values"   not in st.session_state: st.session_state.slider_values = {}
 if "priority_locked" not in st.session_state: st.session_state.priority_locked = False
 
-# --- Layout (unchanged) ---
+# --- Layout ---
 left, right = st.columns([1,2], gap="large")
 
 with left:
     st.subheader("🔋 Energy Controls & Priority")
     if st.button("🔄 Reset"):
-        for k in ["priority_order","current_point","constraints","current_step",
-                  "user_directions","next_point","message","slider_values","priority_locked"]:
+        for k in [
+            "priority_order","current_point","constraints","current_step",
+            "user_directions","next_point","message","slider_values","priority_locked"
+        ]:
             st.session_state.pop(k, None)
         st.rerun()
 
@@ -245,15 +250,17 @@ with left:
         dirc = st.session_state.user_directions.get(src)
         if dirc in ("↑","↓") and src in st.session_state.next_point:
             lo, hi = st.session_state.current_point[src], st.session_state.next_point[src]
-            if hi<lo: lo,hi = hi,lo
-            if lo==hi:
+            if hi < lo: lo,hi = hi,lo
+            if lo == hi:
                 st.write(f"**{src}** is already locked at {hi:.1f} GW")
             else:
-                val = st.slider(f"{src} capacity",
-                                min_value=float(lo), max_value=float(hi),
-                                value=float(hi),
-                                step=(hi-lo)/100 if hi!=lo else 1.0,
-                                key=f"slide_{k}")
+                val = st.slider(
+                    f"{src} capacity",
+                    min_value=float(lo), max_value=float(hi),
+                    value=float(hi),
+                    step=(hi-lo)/100 if hi!=lo else 1.0,
+                    key=f"slide_{k}"
+                )
                 st.session_state.slider_values[f"slide_{k}"] = val
         elif dirc in ("↑","↓"):
             st.write("❌ No feasible extreme. Choose another direction.")
@@ -263,7 +270,12 @@ with left:
             if on_proceed():
                 st.rerun()
 
-        st.text_area("", value=st.session_state.message, height=100)
+        st.text_area(
+            label="",
+            value=st.session_state.message,
+            height=100,
+            label_visibility="hidden"
+        )
     else:
         st.success("✅ All priorities done!")
 
@@ -283,7 +295,7 @@ with right:
     st.subheader("📈 Interpolated Energy Values")
     k = st.session_state.current_step
     if k < len(po) and f"slide_{k}" in st.session_state:
-        src=po[k]
+        src = po[k]
         lo, hi = st.session_state.current_point[src], st.session_state.next_point.get(src, lo)
         α = 0 if hi==lo else (st.session_state[f"slide_{k}"]-lo)/(hi-lo)
         interp = {
@@ -305,8 +317,8 @@ with right:
     st.subheader("📝 Your Selections")
     records = [{
         "Source": src,
-        "Direction": st.session_state.user_directions.get(src,""),
-        "Slider Value (GW)": st.session_state.slider_values.get(f"slide_{i}", "")
+        "Direction": st.session_state.user_directions.get(src, ""),
+        "Slider Value (GW)": st.session_state.slider_values.get(f"slide_{i}", np.nan)
     } for i, src in enumerate(po)]
     st.dataframe(pd.DataFrame(records), use_container_width=True)
 
